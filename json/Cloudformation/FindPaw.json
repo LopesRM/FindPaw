@@ -1,0 +1,325 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "FindPaw - Sistema de monitoramento e rastreio de pets",
+  "Parameters": {
+    "VpcCidr": {
+      "Type": "String",
+      "Default": "10.0.0.0/16",
+      "Description": "CIDR block for the VPC"
+    },
+    "SubnetCidr": {
+      "Type": "String",
+      "Default": "10.0.1.0/24",
+      "Description": "CIDR block for the subnet"
+    }
+  },
+  "Resources": {
+    "FindPawVPC": {
+      "Type": "AWS::EC2::VPC",
+      "Properties": {
+        "CidrBlock": {"Ref": "VpcCidr"},
+        "EnableDnsSupport": true,
+        "EnableDnsHostnames": true,
+        "Tags": [{"Key": "Name", "Value": "FindPaw-VPC"}]
+      }
+    },
+    
+    "InternetGateway": {
+      "Type": "AWS::EC2::InternetGateway",
+      "Properties": {
+        "Tags": [{"Key": "Name", "Value": "FindPaw-IGW"}]
+      }
+    },
+    
+    "VPCGatewayAttachment": {
+      "Type": "AWS::EC2::VPCGatewayAttachment",
+      "Properties": {
+        "VpcId": {"Ref": "FindPawVPC"},
+        "InternetGatewayId": {"Ref": "InternetGateway"}
+      }
+    },
+    
+    "PublicSubnet": {
+      "Type": "AWS::EC2::Subnet",
+      "Properties": {
+        "VpcId": {"Ref": "FindPawVPC"},
+        "CidrBlock": {"Ref": "SubnetCidr"},
+        "AvailabilityZone": {"Fn::Select": ["0", {"Fn::GetAZs": ""}]},
+        "MapPublicIpOnLaunch": true,
+        "Tags": [{"Key": "Name", "Value": "FindPaw-Public-Subnet"}]
+      }
+    },
+    
+    "PublicRouteTable": {
+      "Type": "AWS::EC2::RouteTable",
+      "Properties": {
+        "VpcId": {"Ref": "FindPawVPC"},
+        "Tags": [{"Key": "Name", "Value": "FindPaw-Public-RT"}]
+      }
+    },
+    
+    "PublicRoute": {
+      "Type": "AWS::EC2::Route",
+      "DependsOn": "VPCGatewayAttachment",
+      "Properties": {
+        "RouteTableId": {"Ref": "PublicRouteTable"},
+        "DestinationCidrBlock": "0.0.0.0/0",
+        "GatewayId": {"Ref": "InternetGateway"}
+      }
+    },
+    
+    "SubnetRouteTableAssociation": {
+      "Type": "AWS::EC2::SubnetRouteTableAssociation",
+      "Properties": {
+        "SubnetId": {"Ref": "PublicSubnet"},
+        "RouteTableId": {"Ref": "PublicRouteTable"}
+      }
+    },
+    
+    "FindPawSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Security group for FindPaw resources",
+        "VpcId": {"Ref": "FindPawVPC"},
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 80,
+            "ToPort": 80,
+            "CidrIp": "0.0.0.0/0"
+          },
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 443,
+            "ToPort": 443,
+            "CidrIp": "0.0.0.0/0"
+          }
+        ],
+        "Tags": [{"Key": "Name", "Value": "FindPaw-SG"}]
+      }
+    },
+    
+    "PetsPerdidosBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "findpaw-pets-perdidos",
+        "AccessControl": "Private",
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "Tags": [
+          {"Key": "Name", "Value": "FindPaw-Pets-Perdidos"}
+        ]
+      }
+    },
+    
+    "PetsPedidosTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "TableName": "PetsPedidos",
+        "AttributeDefinitions": [
+          {"AttributeName": "PetID", "AttributeType": "S"}
+        ],
+        "KeySchema": [
+          {"AttributeName": "PetID", "KeyType": "HASH"}
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "Tags": [
+          {"Key": "Name", "Value": "FindPaw-Pets-Pedidos"}
+        ]
+      }
+    },
+    
+    "RacaTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "TableName": "RacaTable",
+        "AttributeDefinitions": [
+          {"AttributeName": "RacaID", "AttributeType": "S"}
+        ],
+        "KeySchema": [
+          {"AttributeName": "RacaID", "KeyType": "HASH"}
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "Tags": [
+          {"Key": "Name", "Value": "FindPaw-Raca-Table"}
+        ]
+      }
+    },
+    
+    "FindPawLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "FindPawProcessor",
+        "Description": "Processa imagens de pets e integra com outros serviços",
+        "Runtime": "python3.9",
+        "Handler": "lambda_function.handler",
+        "Role": {"Fn::GetAtt": ["LambdaExecutionRole", "Arn"]},
+        "Code": {
+          "S3Bucket": "findpaw-lambda-code",
+          "S3Key": "findpaw-processor.zip"
+        },
+        "Environment": {
+          "Variables": {
+            "PETS_TABLE_NAME": {"Ref": "PetsPedidosTable"},
+            "RACA_TABLE_NAME": {"Ref": "RacaTable"},
+            "S3_BUCKET": {"Ref": "PetsPerdidosBucket"}
+          }
+        },
+        "Timeout": 30,
+        "MemorySize": 512,
+        "VpcConfig": {
+          "SubnetIds": [{"Ref": "PublicSubnet"}],
+          "SecurityGroupIds": [{"Ref": "FindPawSecurityGroup"}]
+        },
+        "Tags": {
+          "Name": "FindPaw-Lambda"
+        }
+      }
+    },
+    
+    "LambdaExecutionRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": ["lambda.amazonaws.com"]
+              },
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "FindPawLambdaPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "arn:aws:logs:*:*:*"
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "dynamodb:*",
+                    "s3:*",
+                    "rekognition:*",
+                    "sns:*",
+                    "cloudwatch:*",
+                    "location:*"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    
+    "S3ToLambdaTrigger": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Fn::GetAtt": ["FindPawLambda", "Arn"]},
+        "Principal": "s3.amazonaws.com",
+        "SourceAccount": {"Ref": "AWS::AccountId"},
+        "SourceArn": {"Fn::GetAtt": ["PetsPerdidosBucket", "Arn"]}
+      }
+    },
+    
+    "BucketNotification": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "Bucket": {"Ref": "PetsPerdidosBucket"},
+        "NotificationConfiguration": {
+          "LambdaConfigurations": [
+            {
+              "Event": "s3:ObjectCreated:*",
+              "Function": {"Fn::GetAtt": ["FindPawLambda", "Arn"]}
+            }
+          ]
+        }
+      }
+    },
+    
+    "HealthEngineLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "FunctionName": "HealthEngine",
+        "Description": "Engine de saúde para recomendações de cuidados com pets",
+        "Runtime": "python3.9",
+        "Handler": "health_engine.handler",
+        "Role": {"Fn::GetAtt": ["LambdaExecutionRole", "Arn"]},
+        "Code": {
+          "S3Bucket": "findpaw-lambda-code",
+          "S3Key": "health-engine.zip"
+        },
+        "Environment": {
+          "Variables": {
+            "RACA_TABLE_NAME": {"Ref": "RacaTable"},
+            "SNS_TOPIC_ARN": {"Ref": "FindPawSNSTopic"}
+          }
+        },
+        "Timeout": 30,
+        "MemorySize": 512,
+        "VpcConfig": {
+          "SubnetIds": [{"Ref": "PublicSubnet"}],
+          "SecurityGroupIds": [{"Ref": "FindPawSecurityGroup"}]
+        },
+        "Tags": {
+          "Name": "FindPaw-Health-Engine"
+        }
+      }
+    },
+    
+    "FindPawSNSTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "TopicName": "FindPawNotifications",
+        "DisplayName": "FindPaw Notifications",
+        "Subscription": [
+          {
+            "Endpoint": "user@example.com",
+            "Protocol": "email"
+          }
+        ],
+        "Tags": [
+          {"Key": "Name", "Value": "FindPaw-SNS-Topic"}
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "VPCId": {
+      "Description": "VPC ID",
+      "Value": {"Ref": "FindPawVPC"}
+    },
+    "PublicSubnetId": {
+      "Description": "Public Subnet ID",
+      "Value": {"Ref": "PublicSubnet"}
+    },
+    "S3BucketName": {
+      "Description": "S3 Bucket for pet images",
+      "Value": {"Ref": "PetsPerdidosBucket"}
+    },
+    "LambdaFunctionArn": {
+      "Description": "FindPaw Lambda Function ARN",
+      "Value": {"Fn::GetAtt": ["FindPawLambda", "Arn"]}
+    },
+    "SNSTopicArn": {
+      "Description": "SNS Topic ARN for notifications",
+      "Value": {"Ref": "FindPawSNSTopic"}
+    }
+  }
+}
