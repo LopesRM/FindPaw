@@ -52,13 +52,14 @@ Para configurar o projeto **FindPaw** localmente, siga os passos:
 
 📊 Estimativa de Custos
 Conforme a AWS Pricing Calculator, os custos estimados para 12 meses são:
-| Serviço | Mensal (USD) | Anual (USD) | 
-| Amazon S3 | 0.21 | 2.52 | 
-| AWS Lambda | 0.00 | 0.00 | 
-| Amazon CloudWatch | 3.60 | 43.21 | 
-| Amazon DynamoDB | 51.14 | 793.68 | 
-| Amazon SNS | 245.48 | 2945.76 | 
-| Amazon Location Service | 0.58 | 6.96 | 
+| **Serviço**                | **Mensal (USD)** | **Anual (USD)** |
+|----------------------------|-----------------|----------------|
+| Amazon S3                 | 0.21            | 2.52           |
+| AWS Lambda                | 0.00            | 0.00           |
+| Amazon CloudWatch         | 3.60            | 43.21          |
+| Amazon DynamoDB           | 51.14           | 793.68         |
+| Amazon SNS                | 245.48          | 2945.76        |
+| Amazon Location Service   | 0.58            | 6.96           |
 
 
 🔗 Mais detalhes na estimativa oficial: AWS Pricing Calculator
