@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {
     "AWSTemplateFormatVersion": "2010-09-09",
     "Description": "Infraestrutura para o projeto FindPaw",
@@ -217,3 +218,224 @@
       }
     }
   } 
+=======
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Infraestrutura para o projeto FindPaw",
+    "Parameters": {
+      "EnvironmentName": {
+        "Type": "String",
+        "Default": "dev",
+        "Description": "Developesment environment name (e.g., dev, test, prod)"
+      },
+      "VPCId": {
+        "Type": "AWS::SSM::Parameter::Value<String>",
+        "Default": "/findpaw/vpc-id",
+        "Description": "ID da VPC onde os recursos serão criados"
+      },
+      "PublicSubnet": {
+        "Type": "AWS::SSM::Parameter::Value<String>",
+        "Default": "/findpaw/public-subnet",
+        "Description": "ID da Sub-rede pública onde os recursos serão criados"
+      },
+  
+      "PetsPerdidosBucket": {
+        "Type": "AWS::S3::Bucket",
+        "Properties": {
+          "BucketName": {"Fn::Sub": "findpaw-pets-perdidos-${EnvironmentName}-${AWS::AccountId}"},
+          "AccessControl": "Private",
+          "VersioningConfiguration": {"Status": "Enabled"},
+          "Tags": [{"Key": "Name", "Value": {"Fn::Sub": "FindPaw-Pets-Perdidos-${EnvironmentName}"}}]
+        }
+      },
+  
+      "PetsPedidosTable": {
+        "Type": "AWS::DynamoDB::Table",
+        "Properties": {
+          "TableName": {"Fn::Sub": "PetsPedidos-${EnvironmentName}"},
+          "AttributeDefinitions": [{"AttributeName": "PetID", "AttributeType": "S"}],
+          "KeySchema": [{"AttributeName": "PetID", "KeyType": "HASH"}],
+          "BillingMode": "PAY_PER_REQUEST",
+          "Tags": [{"Key": "Name", "Value": {"Fn::Sub": "FindPaw-Pets-Pedidos-${EnvironmentName}"}}]
+        }
+      },
+  
+      "FindPawLambda": {
+        "Type": "AWS::Lambda::Function",
+        "Properties": {
+          "FunctionName": {"Fn::Sub": "FindPawProcessor-${EnvironmentName}"},
+          "Description": "Processa imagens de pets e integra com outros serviços",
+          "Runtime": "python3.9",
+          "Handler": "lambda_function.handler",
+          "Role": {"Fn::GetAtt": ["LambdaExecutionRole", "Arn"]},
+          "Code": {
+            "S3Bucket": "findpaw-lambda-code",
+            "S3Key": "findpaw-processor.zip"
+          },
+          "Environment": {
+            "Variables": {
+              "PETS_TABLE_NAME": {"Ref": "PetsPedidosTable"},
+              "S3_BUCKET": {"Ref": "PetsPerdidosBucket"},
+              "ENVIRONMENT": {"Ref": "EnvironmentName"}
+            }
+          },
+          "Timeout": 30,
+          "MemorySize": 512,
+          "VpcConfig": {
+            "SubnetIds": [{"Ref": "PublicSubnet"}],
+            "SecurityGroupIds": [{"Ref": "FindPawSecurityGroup"}]
+          },
+          "Tags": {"Name": {"Fn::Sub": "FindPaw-Lambda-${EnvironmentName}"}}
+        }
+      },
+      "Coginition": {
+        "Type": "AWS::Rekognition::Collection",
+        "Properties": {
+          "CollectionId": {"Fn::Sub": "FindPaw-Collection-${EnvironmentName}"},
+          "Tags": [{"Key": "Name", "Value": {"Fn::Sub": "FindPaw-Rekognition-Collection-${EnvironmentName}"}}]
+        }
+      },
+      "RekognitionPermission": {
+        "Type": "AWS::Lambda::Permission",
+        "Properties": {
+          "Action": "rekognition:IndexFaces",
+          "FunctionName": {"Fn::GetAtt": ["FindPawLambda", "Arn"]},
+          "Principal": "rekognition.amazonaws.com",
+          "SourceAccount": {"Ref": "AWS::AccountId"},
+          "SourceArn": {"Fn::GetAtt": ["Coginition", "Arn"]}
+        }
+      },
+      "cloudwatchPermission": {
+        "Type": "AWS::Lambda::Permission",
+        "Properties": {
+          "Action": "cloudwatch:PutMetricData",
+          "FunctionName": {"Fn::GetAtt": ["FindPawLambda", "Arn"]},
+          "Principal": "cloudwatch.amazonaws.com",
+          "SourceAccount": {"Ref": "AWS::AccountId"},
+          "SourceArn": {"Fn::GetAtt": ["FindPawLambda", "Arn"]}
+        }
+      },
+      "SimpleNotificationServicePermission": {
+        "Type": "AWS::Lambda::Permission",
+        "Properties": {
+          "Action": "sns:Publish",
+          "FunctionName": {"Fn::GetAtt": ["FindPawLambda", "Arn"]},
+          "Principal": "sns.amazonaws.com",
+          "SourceAccount": {"Ref": "AWS::AccountId"},
+          "SourceArn": {"Fn::GetAtt": ["FindPawSNSTopic", "Arn"]}
+        }
+      },
+      "Openapi": {
+        "Type": "AWS::ApiGateway::RestApi",
+        "Properties": {
+          "Name": {"Fn::Sub": "FindPaw-API-${EnvironmentName}"},
+          "Description": "API para o projeto FindPaw",
+          "FailOnWarnings": true,
+          "EndpointConfiguration": {
+            "Types": ["REGIONAL"]
+          },
+          "Tags": [{"Key": "Name", "Value": {"Fn::Sub": "FindPaw-API-${EnvironmentName}"}}]
+        }
+      },
+      "FindPawSNSTopic": {
+        "Type": "AWS::SNS::Topic",
+        "Properties": {
+          "TopicName": {"Fn::Sub": "FindPaw-Notifications-${EnvironmentName}"},
+          "DisplayName": {"Fn::Sub": "FindPaw Notifications - ${EnvironmentName}"},
+          "Subscription": [
+            {
+              "Endpoint": {"Ref": "FindPawLambda"},
+              "Protocol": "lambda"
+            }
+          ],
+          "Tags": [{"Key": "Name", "Value": {"Fn::Sub": "FindPaw-SNS-Topic-${EnvironmentName}"}}]
+        }
+      },
+      
+      "LambdaExecutionRole": {
+        "Type": "AWS::IAM::Role",
+        "Properties": {
+          "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              {
+                "Effect": "Allow",
+                "Principal": {"Service": ["lambda.amazonaws.com"]},
+                "Action": ["sts:AssumeRole"]
+              }
+            ]
+          },
+          "Policies": [
+            {
+              "PolicyName": "FindPawLambdaPolicy",
+              "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "logs:CreateLogGroup",
+                      "logs:CreateLogStream",
+                      "logs:PutLogEvents"
+                    ],
+                    "Resource": "arn:aws:logs:*:*:*"
+                  },
+                  {
+                    "Effect": "Allow",
+                    "Action": [
+                      "dynamodb:*",
+                      "s3:*",
+                      "rekognition:*",
+                      "cloudwatch:*"
+                    ],
+                    "Resource": "*"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+  
+      "S3ToLambdaPermission": {
+        "Type": "AWS::Lambda::Permission",
+        "Properties": {
+          "Action": "lambda:InvokeFunction",
+          "FunctionName": {"Fn::GetAtt": ["FindPawLambda", "Arn"]},
+          "Principal": "s3.amazonaws.com",
+          "SourceAccount": {"Ref": "AWS::AccountId"},
+          "SourceArn": {"Fn::GetAtt": ["PetsPerdidosBucket", "Arn"]}
+        }
+      },
+  
+      "BucketNotification": {
+        "Type": "AWS::S3::Bucket",
+        "Properties": {
+          "Bucket": {"Ref": "PetsPerdidosBucket"},
+          "NotificationConfiguration": {
+            "LambdaConfigurations": [
+              {
+                "Event": "s3:ObjectCreated:*",
+                "Function": {"Fn::GetAtt": ["FindPawLambda", "Arn"]}
+              }
+            ]
+          }
+        }
+      }
+    },
+    "Outputs": {
+      "VPCId": {
+        "Description": "ID da VPC",
+        "Value": {"Ref": "FindPawVPC"}
+      },
+      "LambdaFunctionArn": {
+        "Description": "ARN da Função Lambda",
+        "Value": {"Fn::GetAtt": ["FindPawLambda", "Arn"]}
+      },
+      "S3BucketName": {
+        "Description": "Nome do Bucket S3",
+        "Value": {"Ref": "PetsPerdidosBucket"}
+      }
+    }
+  } 
+>>>>>>> d5a9400fec7a2e6112a8c670d78fc6bba6d5f185
