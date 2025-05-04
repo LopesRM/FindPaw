@@ -70,3 +70,32 @@ def lambda_handler(event, context):
             'statusCode': 500,
             'body': json.dumps('Erro no processamento da imagem')
         }
+    
+    sns = boto3.client('sns')
+    sns.publish(
+        TopicArn='arn:aws:sns:REGION:ACCOUNT_ID:TOPIC_NAME',  # Substitua pelos valores corretos
+        Message=f"json.dumps(item)",
+        Subject='Novo Pet Processado'
+    )
+
+    location = rekognition.detect_faces(
+        Image={
+            'S3Object': {
+                'Bucket': bucket,
+                'Name': key
+            }
+        },
+        Attributes=['ALL']
+    )
+
+    location = boto3.client('location')
+    location.put_item(
+        TableName='PetsPedidos',
+        Item={
+            'PetID': key.split('.')[0],
+            'Location': {
+                'Latitude': location['FaceDetails'][0]['BoundingBox']['Left'],
+                'Longitude': location['FaceDetails'][0]['BoundingBox']['Top']
+            }
+        }
+    )
