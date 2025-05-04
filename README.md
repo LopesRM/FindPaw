@@ -32,14 +32,18 @@ Para configurar o projeto **FindPaw** localmente, siga os passos:
    ```sh
    git clone https://github.com/seu-usuario/findpaw.git
    cd findpaw
-npm install
-```
-AWS_ACCESS_KEY_ID=xxxxxxx
-AWS_SECRET_ACCESS_KEY=xxxxxxx
-```
-npm start
-```
-```
+   ```
+   ```
+   npm install
+   ```
+   ```
+   AWS_ACCESS_KEY_ID=xxxxxxx
+   AWS_SECRET_ACCESS_KEY=xxxxxxx
+   ```
+
+   ```
+   npm start
+   ```
 📌 Uso
 - Os tutores cadastram seus pets no sistema.
 - O sistema realiza a identificação facial e registra no banco de dados.
