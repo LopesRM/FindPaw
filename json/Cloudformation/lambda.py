@@ -3,19 +3,20 @@ import json
 import urllib.parse
 from datetime import datetime
 
-# Inicializa clientes AWS
+# Initialize AWS clients
 s3 = boto3.client('s3')
 rekognition = boto3.client('rekognition')
 dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('PetsPedidos')  # Nome da tabela DynamoDB
+table = dynamodb.Table('PetsPedidos')
+sns = boto3.client('sns')
 
 def lambda_handler(event, context):
-    # 1. Obtém informações do objeto S3 que disparou o evento
+    # 1. Get S3 object information
     bucket = event['Records'][0]['s3']['bucket']['name']
     key = urllib.parse.unquote_plus(event['Records'][0]['s3']['object']['key'], encoding='utf-8')
     
     try:
-        # 2. Usa Rekognition para detectar características do pet
+        # 2. Use Rekognition to detect pet characteristics
         response = rekognition.detect_labels(
             Image={
                 'S3Object': {
@@ -27,7 +28,7 @@ def lambda_handler(event, context):
             MinConfidence=70
         )
         
-        # 3. Extrai informações relevantes
+        # 3. Extract relevant information
         labels = [label['Name'] for label in response['Labels']]
         is_dog = 'Dog' in labels
         is_cat = 'Cat' in labels
@@ -35,67 +36,66 @@ def lambda_handler(event, context):
         if not (is_dog or is_cat):
             return {
                 'statusCode': 200,
-                'body': json.dumps('Imagem não contém um pet reconhecível')
+                'body': json.dumps('Image does not contain a recognizable pet')
             }
         
-        # 4. Identifica raça (se disponível)
+        # 4. Identify breed (if available) - expanded breed list
+        common_breeds = ['Labrador Retriever', 'Golden Retriever', 'Siamese', 
+                        'German Shepherd', 'Bulldog', 'Beagle', 'Poodle',
+                        'Persian', 'Maine Coon', 'Bengal']
         breed = next(
             (label['Name'] for label in response['Labels'] 
-            if label['Name'] in ['Labrador', 'Golden Retriever', 'Siamese']  # Exemplo de raças
-        ), 'Desconhecida')
+             if label['Name'] in common_breeds),
+            'Unknown'
+        )
         
-        # 5. Armazena no DynamoDB
+        # 5. Detect additional attributes
+        face_response = rekognition.detect_faces(
+            Image={
+                'S3Object': {
+                    'Bucket': bucket,
+                    'Name': key
+                }
+            },
+            Attributes=['ALL']
+        )
+        
+        age_range = None
+        if face_response.get('FaceDetails'):
+            age_range = face_response['FaceDetails'][0].get('AgeRange', {})
+        
+        # 6. Prepare DynamoDB item
         item = {
-            'PetID': key.split('.')[0],  # Usa o nome do arquivo como ID
+            'PetID': key.split('.')[0],  # Use filename as ID
             'ImagemURL': f"https://{bucket}.s3.amazonaws.com/{key}",
             'Raca': breed,
-            'Tipo': 'Cachorro' if is_dog else 'Gato',
+            'Tipo': 'Dog' if is_dog else 'Cat',
             'Caracteristicas': labels,
             'DataProcessamento': datetime.now().isoformat(),
-            'Status': 'Processado'
+            'Status': 'Processado',
+            'AgeRange': age_range
         }
         
+        # 7. Store in DynamoDB
         table.put_item(Item=item)
         
-        # 6. Log e retorno
-        print(f"Pet processado: {item}")
+        # 8. Send SNS notification
+        sns.publish(
+            TopicArn='arn:aws:sns:REGION:ACCOUNT_ID:TOPIC_NAME',
+            Message=json.dumps(item),
+            Subject='Novo Pet Processado'
+        )
+        
+        # 9. Log and return
+        print(f"Pet processed: {item}")
         return {
             'statusCode': 200,
-            'body': json.dumps('Processamento concluído com sucesso!')
+            'body': json.dumps('Processing completed successfully!')
         }
         
     except Exception as e:
-        print(f"Erro: {str(e)}")
+        print(f"Error: {str(e)}")
         return {
             'statusCode': 500,
-            'body': json.dumps('Erro no processamento da imagem')
+            'body': json.dumps('Error processing image')
         }
-    
-    sns = boto3.client('sns')
-    sns.publish(
-        TopicArn='arn:aws:sns:REGION:ACCOUNT_ID:TOPIC_NAME',  # Substitua pelos valores corretos
-        Message=f"json.dumps(item)",
-        Subject='Novo Pet Processado'
-    )
-
-    location = rekognition.detect_faces(
-        Image={
-            'S3Object': {
-                'Bucket': bucket,
-                'Name': key
-            }
-        },
-        Attributes=['ALL']
-    )
-
-    location = boto3.client('location')
-    location.put_item(
-        TableName='PetsPedidos',
-        Item={
-            'PetID': key.split('.')[0],
-            'Location': {
-                'Latitude': location['FaceDetails'][0]['BoundingBox']['Left'],
-                'Longitude': location['FaceDetails'][0]['BoundingBox']['Top']
-            }
-        }
-    )
