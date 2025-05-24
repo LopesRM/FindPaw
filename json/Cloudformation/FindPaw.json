@@ -1,11 +1,11 @@
-{
+{ 
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "Infraestrutura para o projeto FindPaw com RDS para perfis de pets",
+  "Description": "Infraestrutura para o projeto FindPaw com dynamoDB para perfis de pets",
   "Parameters": {
     "EnvironmentName": {
       "Type": "String",
       "Default": "dev",
-      "Description": "Nome do ambiente (ex: dev, test, prod)"
+      "Description": "Nome do ambiente (test)"
     },
     "VPCId": {
       "Type": "AWS::SSM::Parameter::Value<String>",
@@ -59,6 +59,36 @@
         ]
       }
     },
+    "PetsHealthTable": {
+      "Type": "AWS::DynamoDB::Table",
+      "Properties": {
+        "TableName": {
+          "Fn::Sub": "PetsHealth-${EnvironmentName}"
+        },
+        "AttributeDefinitions": [
+          {
+            "AttributeName": "PetID",
+            "AttributeType": "S"
+          }
+        ],
+        "KeySchema": [
+          {
+            "AttributeName": "PetID",
+            "KeyType": "HASH"
+          }
+        ],
+        "BillingMode": "PAY_PER_REQUEST",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": {
+              "Fn::Sub": "FindPaw-Pets-Health-${EnvironmentName}"
+            }
+          }
+        ]
+      },
+    
+    
     "PetsPerdidosTable": {
       "Type": "AWS::DynamoDB::Table",
       "Properties": {
@@ -83,92 +113,6 @@
             "Key": "Name",
             "Value": {
               "Fn::Sub": "FindPaw-Pets-Perdidos-${EnvironmentName}"
-            }
-          }
-        ]
-      }
-    },
-    "FindPawRDSInstance": {
-      "Type": "AWS::RDS::DBInstance",
-      "Properties": {
-        "DBInstanceIdentifier": {
-          "Fn::Sub": "findpaw-pets-db-${EnvironmentName}"
-        },
-        "Engine": "postgres",
-        "EngineVersion": "13.7",
-        "DBInstanceClass": "db.t3.micro",
-        "AllocatedStorage": "20",
-        "StorageType": "gp2",
-        "MasterUsername": {
-          "Ref": "DatabaseUsername"
-        },
-        "MasterUserPassword": {
-          "Ref": "DatabasePassword"
-        },
-        "VPCSecurityGroups": [
-          {
-            "Ref": "RDSSecurityGroup"
-          }
-        ],
-        "DBSubnetGroupName": {
-          "Ref": "FindPawDBSubnetGroup"
-        },
-        "PubliclyAccessible": false,
-        "MultiAZ": false,
-        "Tags": [
-          {
-            "Key": "Name",
-            "Value": {
-              "Fn::Sub": "FindPaw-RDS-${EnvironmentName}"
-            }
-          }
-        ]
-      }
-    },
-    "FindPawDBSubnetGroup": {
-      "Type": "AWS::RDS::DBSubnetGroup",
-      "Properties": {
-        "DBSubnetGroupDescription": "Subnet group para o RDS do FindPaw",
-        "SubnetIds": [
-          {
-            "Ref": "PrivateSubnet1"
-          },
-          {
-            "Ref": "PrivateSubnet2"
-          }
-        ],
-        "Tags": [
-          {
-            "Key": "Name",
-            "Value": {
-              "Fn::Sub": "FindPaw-DBSubnetGroup-${EnvironmentName}"
-            }
-          }
-        ]
-      }
-    },
-    "RDSSecurityGroup": {
-      "Type": "AWS::EC2::SecurityGroup",
-      "Properties": {
-        "GroupDescription": "SG para o RDS do FindPaw",
-        "VpcId": {
-          "Ref": "VPCId"
-        },
-        "SecurityGroupIngress": [
-          {
-            "IpProtocol": "tcp",
-            "FromPort": 5432,
-            "ToPort": 5432,
-            "SourceSecurityGroupId": {
-              "Ref": "FindPawSecurityGroup"
-            }
-          }
-        ],
-        "Tags": [
-          {
-            "Key": "Name",
-            "Value": {
-              "Fn::Sub": "FindPaw-RDS-SG-${EnvironmentName}"
             }
           }
         ]
@@ -203,16 +147,7 @@
       }
     }
   },
-  "Outputs": {
-    "RDSInstanceEndpoint": {
-      "Description": "Endpoint do RDS para conexão",
-      "Value": {
-        "Fn::GetAtt": [
-          "FindPawRDSInstance",
-          "Endpoint.Address"
-        ]
-      }
-    },
+  "Outputs":{
     "S3BucketName": {
       "Description": "Nome do Bucket S3 para fotos",
       "Value": {
@@ -234,5 +169,6 @@
         "Ref": "FindPawSNSTopic"
       }
     }
+  }
   }
 }
